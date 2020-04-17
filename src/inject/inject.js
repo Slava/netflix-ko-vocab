@@ -1,13 +1,12 @@
-chrome.extension.sendMessage({}, function(response) {
-	var readyStateCheckInterval = setInterval(function() {
-	if (document.readyState === "complete") {
-		clearInterval(readyStateCheckInterval);
+function netflixKoVocabInject() {
+  document.dispatchEvent(new CustomEvent('netflixKoVocab_manifests', {
+    detail: JSON.stringify(window.manifests),
+  }));
+}
 
-		// ----------------------------------------------------------
-		// This part of the script triggers when page is done loading
-		console.log("Hello. This message was sent from scripts/inject.js");
-		// ----------------------------------------------------------
-
-	}
-	}, 10);
-});
+const interval = setInterval(() => {
+  if (window.manifests && Array.from(Object.keys(window.manifests)).length > 0) {
+    netflixKoVocabInject();
+    clearInterval(interval);
+  }
+}, 100);
