@@ -3,12 +3,17 @@ const fetchDict = async () => {
   dict = await (await fetch(chrome.runtime.getURL('/src/dict.json'))).json();
 }
 
+let levels = null;
+const fetchLevels = async () => {
+  levels = await (await fetch(chrome.runtime.getURL('/src/levels.json'))).json();
+}
+
 const lookupDefs = (word) => {
-  if (!dict) {
+  if (!dict || !levels) {
     throw new Error('Lookup before dictionary is fetched');
   }
 
-  for (let i = 0; i < word.length; i++) {
+  for (let i = 0; i < Math.max(1, Math.min(word.length - 1, 3)); i++) {
     const prefix = word.substring(0, word.length - i);
     if (prefix in dict) {
       const { defs, roots } = dict[prefix];
@@ -16,7 +21,7 @@ const lookupDefs = (word) => {
         return {
           word: prefix,
           defintion: defs.split('|').join(','),
-          level: 'a',
+          level: levels[prefix] || 'U',
         };
       } else if (roots) {
         const root = Array.from(Object.keys(roots))[0];
@@ -24,7 +29,7 @@ const lookupDefs = (word) => {
           return {
             word: root,
             definition: dict[root].defs.split('|').join(','),
-            level: 'a',
+            level: levels[root] || 'U',
           };
         }
       }
@@ -130,6 +135,7 @@ const getVideoNode = async () => {
 const netflixKoVocabMain = async () => {
   const subs = await fetchSubtitles();
   await fetchDict();
+  await fetchLevels();
 
   if (!subs) {
     return;
@@ -149,8 +155,9 @@ const netflixKoVocabMain = async () => {
       return;
     }
     lastDisplayed = sub;
-    const words = sub.content.replace(/\n/g, ' ').replace(/[^\uac00-\ud7af\u1100-\u11ff\u3130-\u318f\ua960-\ua97f\ud7b0-\ud7ff\s]/g, '').split(' ').filter(x => x !== '');
-    display(words);
+    const words = sub.content.replace(/\n/g, ' ').replace(/\([^)]*\)/g, '').replace(/\[[^\]]*\]/g, '').replace(/[^\uac00-\ud7af\u1100-\u11ff\u3130-\u318f\ua960-\ua97f\ud7b0-\ud7ff\s]/g, '').split(' ').filter(x => x !== '');
+    const defs = words.map(lookupDefs).filter(def => !!def);
+    display(defs);
   }, 100);
 };
 
