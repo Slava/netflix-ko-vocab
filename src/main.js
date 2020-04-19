@@ -8,6 +8,51 @@ const fetchLevels = async () => {
   levels = await (await fetch(chrome.runtime.getURL('/src/levels.json'))).json();
 }
 
+let top2k = null;
+const fetchTop2k = async () => {
+  top2k = await (await fetch(chrome.runtime.getURL('/src/top2000.json'))).json();
+}
+
+// words that are commonly misidentified should be skipped
+const filteredWords = {
+  '게': true,
+  '같은': true,
+  '네': true,
+  '내': true,
+  '해': true,
+  '야': true,
+  '아': true,
+  '안': true,
+  '애가': true,
+  '오케이': true,
+};
+
+const rank2Level = (rank) => {
+  if (rank < 200) {
+    return 'A';
+  }
+  if (rank < 600) {
+    return 'B';
+  }
+  if (rank < 1200) {
+    return 'C';
+  }
+  return 'D';
+};
+
+const enchanceDefs = ({ word, definition, level }) => {
+  if (top2k[word]) {
+    return {
+      word,
+      definition: top2k[word].def.trim(),
+      level: rank2Level(top2k[word].rank),
+    }
+  }
+
+  definition = definition.replace(/(\(.*\))/g, '');
+  return { word, definition, level };
+};
+
 const lookupDefs = (word) => {
   if (!dict || !levels) {
     throw new Error('Lookup before dictionary is fetched');
@@ -20,7 +65,7 @@ const lookupDefs = (word) => {
       if (defs) {
         return {
           word: prefix,
-          defintion: defs.split('|').join(','),
+          definition: defs.split('|').join(','),
           level: levels[prefix] || 'U',
         };
       } else if (roots) {
@@ -101,6 +146,10 @@ const parseNetflixSubs = (allText) => {
   });
 };
 
+const uniqueArray = (list) => {
+  return [...new Set(list)];
+};
+
 const findInSubs = (segments, ts) => {
   let l = 0, r = segments.length;
   while (l < r) {
@@ -134,8 +183,7 @@ const getVideoNode = async () => {
 
 const netflixKoVocabMain = async () => {
   const subs = await fetchSubtitles();
-  await fetchDict();
-  await fetchLevels();
+  await Promise.all([fetchDict(), fetchLevels(), fetchTop2k()]);
 
   if (!subs) {
     return;
@@ -156,13 +204,57 @@ const netflixKoVocabMain = async () => {
     }
     lastDisplayed = sub;
     const words = sub.content.replace(/\n/g, ' ').replace(/\([^)]*\)/g, '').replace(/\[[^\]]*\]/g, '').replace(/[^\uac00-\ud7af\u1100-\u11ff\u3130-\u318f\ua960-\ua97f\ud7b0-\ud7ff\s]/g, '').split(' ').filter(x => x !== '');
-    const defs = words.map(lookupDefs).filter(def => !!def);
+    const defs = uniqueArray(words)
+          .map(lookupDefs)
+          .filter(def => !!def)
+          .map(enchanceDefs)
+          .filter(({ word }) => !filteredWords[word])
+          .filter(({ level }) => level >= 'C');
     display(defs);
   }, 100);
 };
 
+const stylesheet = `
+#netflix-ko-vocab {
+  display: flex;
+  justify-content: center;
+  text-shadow: 0px 0px 6px #000000;
+}
+
+#netflix-ko-vocab .card {
+  max-width: 150px;
+  margin-left: 30px;
+  text-align: center;
+}
+
+#netflix-ko-vocab .word {
+  font-size: 30px;
+}
+
+#netflix-ko-vocab .def {
+  font-size: 14px;
+}
+`;
+
+const subsDivParentId = 'lln-main-subs';
+let subsDiv = null;
 const display = (words) => {
-  console.log(words);
+  if (!subsDiv) {
+    const parentDiv = document.getElementById(subsDivParentId);
+    if (!parentDiv) {
+      return;
+    }
+    subsDiv = document.createElement('div');
+    parentDiv.prepend(subsDiv);
+    subsDiv.id = 'netflix-ko-vocab';
+  }
+  subsDiv.innerHTML = words.map(
+    ({ word, definition, level }) =>
+      `<div class="card">
+         <div class="word">${word}</div>
+         <div class="def">${definition}</div>
+       </div>`
+  ).join('');
 };
 
 document.addEventListener('netflixKoVocab_manifests', function(e) {
@@ -180,5 +272,12 @@ function injectScript() {
   };
   (document.head || document.documentElement).appendChild(s);
 }
-injectScript();
 
+function injectStylesheet() {
+  const s = document.createElement('style');
+  s.innerHTML = stylesheet;
+  (document.head || document.documentElement).appendChild(s);
+}
+
+injectScript();
+injectStylesheet();
