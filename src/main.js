@@ -3,28 +3,13 @@ const fetchDict = async () => {
   dict = await (await fetch(chrome.runtime.getURL('/src/dict.json'))).json();
 }
 
-let levels = null;
-const fetchLevels = async () => {
-  levels = await (await fetch(chrome.runtime.getURL('/src/levels.json'))).json();
-}
-
-let top2k = null;
-const fetchTop2k = async () => {
-  top2k = await (await fetch(chrome.runtime.getURL('/src/top2000.json'))).json();
+let conjugations = null;
+const fetchConjugations = async () => {
+  conjugations = await (await fetch(chrome.runtime.getURL('/src/conjugations.json'))).json();
 }
 
 // words that are commonly misidentified should be skipped
 const filteredWords = {
-  '게': true,
-  '같은': true,
-  '네': true,
-  '내': true,
-  '해': true,
-  '야': true,
-  '아': true,
-  '안': true,
-  '애가': true,
-  '오케이': true,
 };
 
 const rank2Level = (rank) => {
@@ -40,44 +25,22 @@ const rank2Level = (rank) => {
   return 'D';
 };
 
-const enchanceDefs = ({ word, definition, level }) => {
-  if (top2k[word]) {
-    return {
-      word,
-      definition: top2k[word].def.trim(),
-      level: rank2Level(top2k[word].rank),
-    }
-  }
-
-  definition = definition.replace(/(\(.*\))/g, '');
-  return { word, definition, level };
-};
-
 const lookupDefs = (word) => {
-  if (!dict || !levels) {
+  if (!dict || !conjugations) {
     throw new Error('Lookup before dictionary is fetched');
   }
 
   for (let i = 0; i < Math.max(1, Math.min(word.length - 1, 3)); i++) {
     const prefix = word.substring(0, word.length - i);
-    if (prefix in dict) {
-      const { defs, roots } = dict[prefix];
-      if (defs) {
-        return {
-          word: prefix,
-          definition: defs.split('|').join(','),
-          level: levels[prefix] || 'U',
-        };
-      } else if (roots) {
-        const root = Array.from(Object.keys(roots))[0];
-        if (root in dict) {
-          return {
-            word: root,
-            definition: dict[root].defs.split('|').join(','),
-            level: levels[root] || 'U',
-          };
-        }
-      }
+    let w = prefix;
+    if (w in dict) {
+      return dict[w];
+    }
+    if (prefix in conjugations) {
+      w = conjugations[prefix];
+    }
+    if (w in dict) {
+      return dict[w];
     }
   }
 
@@ -183,7 +146,7 @@ const getVideoNode = async () => {
 
 const netflixKoVocabMain = async () => {
   const subs = await fetchSubtitles();
-  await Promise.all([fetchDict(), fetchLevels(), fetchTop2k()]);
+  await Promise.all([fetchDict(), fetchConjugations()]);
 
   if (!subs) {
     return;
@@ -195,6 +158,9 @@ const netflixKoVocabMain = async () => {
   let lastDisplayed = null;
   setInterval(() => {
     const { currentTime } = video;
+    if (lastDisplayed && lastDisplayed.start <= currentTime && lastDisplayed.end >= currentTime) {
+      return;
+    }
     const sub = findInSubs(parsedSubs, currentTime);
     if (!sub) {
       return;
@@ -207,11 +173,10 @@ const netflixKoVocabMain = async () => {
     const defs = uniqueArray(words)
           .map(lookupDefs)
           .filter(def => !!def)
-          .map(enchanceDefs)
           .filter(({ word }) => !filteredWords[word])
-          .filter(({ level }) => level >= 'C');
+          //.filter(({ level }) => level >= 'B');
     display(defs);
-  }, 100);
+  }, 50);
 };
 
 const stylesheet = `
@@ -225,6 +190,18 @@ const stylesheet = `
   max-width: 150px;
   margin-left: 30px;
   text-align: center;
+}
+
+.card.B {
+  text-shadow: 0px 0px 6px #387627;
+}
+
+.card.C {
+  text-shadow: 0px 0px 6px #C1A145;
+}
+
+.card.D {
+  text-shadow: 0px 0px 6px #9F3535;
 }
 
 #netflix-ko-vocab .word {
@@ -249,10 +226,10 @@ const display = (words) => {
     subsDiv.id = 'netflix-ko-vocab';
   }
   subsDiv.innerHTML = words.map(
-    ({ word, definition, level }) =>
-      `<div class="card">
+    ({ word, def, level }) =>
+      `<div class="card ${level}">
          <div class="word">${word}</div>
-         <div class="def">${definition}</div>
+         <div class="def">${def}</div>
        </div>`
   ).join('');
 };
