@@ -174,7 +174,7 @@ const netflixKoVocabMain = async () => {
           .map(lookupDefs)
           .filter(def => !!def)
           .filter(({ word }) => !filteredWords[word])
-          //.filter(({ level }) => level >= 'B');
+          .filter(({ level }) => level >= 'B');
     display(defs);
   }, 50);
 };
